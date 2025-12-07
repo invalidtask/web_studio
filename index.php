@@ -1,6 +1,38 @@
 <?php
-// Browser-Based Streaming Studio
-// PHP 5.6 compatible
+/**
+ * Web Studio - Browser-Based Streaming Platform
+ * 
+ * Entry point for the streaming studio application.
+ * PHP 5.6 compatible HTML/UI generation.
+ * 
+ * FEATURES:
+ * - Dark modern UI with 6 layout options
+ * - Active speaker detection using Web Audio API
+ * - Auto-spotlight mode that focuses active speaker
+ * - Device selector for camera and microphone with graceful fallbacks
+ * - Support for up to 4 remote guests via WebRTC
+ * - Canvas-based compositor for final output
+ * - Individual peer connections per guest
+ * - Separate publishing connection for mixed output
+ * 
+ * CONFIGURATION:
+ * Default signaling endpoints can be modified in the UI or in js/app.js:
+ * - HTTP Publish: http://localhost:1611/api/rtc_publish
+ * - WebSocket: ws://localhost:7443/publish
+ * 
+ * USAGE:
+ * 1. Start PHP server: php -S localhost:8000
+ * 2. Open http://localhost:8000/index.php in browser
+ * 3. Grant camera/microphone permissions
+ * 4. Select devices and start camera
+ * 5. Add guests (demo mode creates mock streams)
+ * 6. Choose layout or enable auto-spotlight
+ * 7. Configure backend URLs and start streaming
+ * 
+ * @author Web Studio Team
+ * @version 2.0
+ * @license MIT
+ */
 
 // Set headers
 header('Content-Type: text/html; charset=utf-8');
@@ -28,35 +60,50 @@ header('Content-Type: text/html; charset=utf-8');
             <section class="control-panel">
                 <div class="control-group">
                     <h3>Layout Selector</h3>
+                    <div class="layout-mode-toggle">
+                        <label>
+                            <input type="checkbox" id="auto-layout-mode">
+                            Auto-Spotlight Mode
+                        </label>
+                    </div>
                     <div class="layout-options">
-                        <button class="layout-btn active" data-layout="single">
-                            <div class="layout-preview layout-single"></div>
-                            <span>Single</span>
+                        <button class="layout-btn active" data-layout="grid-2x2">
+                            <div class="layout-preview layout-grid4"></div>
+                            <span>Grid 2x2</span>
+                        </button>
+                        <button class="layout-btn" data-layout="grid-3up">
+                            <div class="layout-preview layout-grid5"></div>
+                            <span>3-Up</span>
+                        </button>
+                        <button class="layout-btn" data-layout="grid-4up">
+                            <div class="layout-preview layout-grid4"></div>
+                            <span>4-Up</span>
                         </button>
                         <button class="layout-btn" data-layout="picture-in-picture">
                             <div class="layout-preview layout-pip"></div>
                             <span>PIP</span>
                         </button>
-                        <button class="layout-btn" data-layout="split-2">
+                        <button class="layout-btn" data-layout="side-by-side">
                             <div class="layout-preview layout-split2"></div>
-                            <span>Split 2</span>
+                            <span>Side-by-Side</span>
                         </button>
-                        <button class="layout-btn" data-layout="grid-4">
-                            <div class="layout-preview layout-grid4"></div>
-                            <span>Grid 4</span>
-                        </button>
-                        <button class="layout-btn" data-layout="grid-5">
-                            <div class="layout-preview layout-grid5"></div>
-                            <span>Grid 5</span>
+                        <button class="layout-btn" data-layout="spotlight">
+                            <div class="layout-preview layout-single"></div>
+                            <span>Spotlight</span>
                         </button>
                     </div>
                 </div>
 
                 <!-- Webcam Selector -->
                 <div class="control-group">
-                    <h3>Webcam Selector</h3>
+                    <h3>Device Selector</h3>
+                    <label for="webcam-select">Camera:</label>
                     <select id="webcam-select" class="form-control">
                         <option value="">Select a camera...</option>
+                    </select>
+                    <label for="mic-select">Microphone:</label>
+                    <select id="mic-select" class="form-control">
+                        <option value="">Default microphone</option>
                     </select>
                     <button id="start-webcam" class="btn btn-primary">Start Camera</button>
                     <button id="stop-webcam" class="btn btn-secondary" disabled>Stop Camera</button>
@@ -93,10 +140,14 @@ header('Content-Type: text/html; charset=utf-8');
                 <div class="control-group">
                     <h3>WebRTC Streaming</h3>
                     <div class="stream-controls">
-                        <label for="stream-url">OSSRS Server URL:</label>
-                        <input type="text" id="stream-url" class="form-control" 
-                               value="rtc://localhost:1985/live/livestream" 
-                               placeholder="rtc://server:port/app/stream">
+                        <label for="publish-url">Publish URL (HTTP):</label>
+                        <input type="text" id="publish-url" class="form-control" 
+                               value="http://localhost:1611/api/rtc_publish" 
+                               placeholder="http://localhost:1611/api/rtc_publish">
+                        <label for="websocket-url">WebSocket URL:</label>
+                        <input type="text" id="websocket-url" class="form-control" 
+                               value="ws://localhost:7443/publish" 
+                               placeholder="ws://localhost:7443/publish">
                         <button id="start-stream" class="btn btn-success">Start Streaming</button>
                         <button id="stop-stream" class="btn btn-danger" disabled>Stop Streaming</button>
                     </div>
@@ -106,26 +157,31 @@ header('Content-Type: text/html; charset=utf-8');
             <!-- Video Preview Area -->
             <section class="video-preview">
                 <h3>Preview</h3>
-                <div id="video-container" class="video-container layout-single">
-                    <div class="video-slot main-video" id="slot-main">
+                <div id="video-container" class="video-container layout-grid-2x2">
+                    <div class="video-slot main-video" id="slot-main" data-participant="host">
                         <video id="local-video" autoplay muted playsinline></video>
-                        <div class="video-label">Local Camera</div>
+                        <div class="video-label">Host (You)</div>
+                        <canvas class="audio-canvas" id="audio-canvas-host"></canvas>
                     </div>
-                    <div class="video-slot guest-video" id="slot-guest-1" style="display:none;">
+                    <div class="video-slot guest-video" id="slot-guest-1" data-participant="guest-1" style="display:none;">
                         <video id="guest-video-1" autoplay playsinline></video>
                         <div class="video-label">Guest 1</div>
+                        <canvas class="audio-canvas" id="audio-canvas-guest-1"></canvas>
                     </div>
-                    <div class="video-slot guest-video" id="slot-guest-2" style="display:none;">
+                    <div class="video-slot guest-video" id="slot-guest-2" data-participant="guest-2" style="display:none;">
                         <video id="guest-video-2" autoplay playsinline></video>
                         <div class="video-label">Guest 2</div>
+                        <canvas class="audio-canvas" id="audio-canvas-guest-2"></canvas>
                     </div>
-                    <div class="video-slot guest-video" id="slot-guest-3" style="display:none;">
+                    <div class="video-slot guest-video" id="slot-guest-3" data-participant="guest-3" style="display:none;">
                         <video id="guest-video-3" autoplay playsinline></video>
                         <div class="video-label">Guest 3</div>
+                        <canvas class="audio-canvas" id="audio-canvas-guest-3"></canvas>
                     </div>
-                    <div class="video-slot guest-video" id="slot-guest-4" style="display:none;">
+                    <div class="video-slot guest-video" id="slot-guest-4" data-participant="guest-4" style="display:none;">
                         <video id="guest-video-4" autoplay playsinline></video>
                         <div class="video-label">Guest 4</div>
+                        <canvas class="audio-canvas" id="audio-canvas-guest-4"></canvas>
                     </div>
                 </div>
                 <canvas id="composite-canvas" style="display:none;"></canvas>
