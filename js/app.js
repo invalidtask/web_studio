@@ -194,7 +194,7 @@
         
         // Auto-spotlight mode toggle
         $('#auto-layout-mode').on('change', function() {
-            state.autoSpotlight = $(this).is(':checked');
+            state.autoSpotlight = this.checked;
             console.log('Auto-spotlight mode:', state.autoSpotlight ? 'enabled' : 'disabled');
             if (state.autoSpotlight) {
                 startVADChecking();
