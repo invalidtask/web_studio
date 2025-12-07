@@ -210,6 +210,10 @@
         
         $('#mic-select').on('change', function() {
             state.selectedMicId = $(this).val();
+            // If camera is active, inform user that changes take effect after restart
+            if (state.localStream) {
+                showNotification('Microphone change will take effect when camera is restarted', 'info');
+            }
         });
         
         // Camera controls
@@ -417,6 +421,16 @@
             return;
         }
         
+        // Check if there are any audio sources to analyze
+        var hasAudioSources = state.localAnalyser || Object.keys(state.guests).some(function(guestNum) {
+            return state.guests[guestNum].analyser;
+        });
+        
+        if (!hasAudioSources) {
+            console.warn('No audio sources available for VAD checking');
+            return;
+        }
+        
         console.log('Starting VAD checking');
         
         state.vadCheckTimer = setInterval(function() {
@@ -491,10 +505,10 @@
         }
         
         // Update speaking border
-        $('.video-slot').removeClass('speaking');
+        $('.video-slot').removeClass('speaking').removeAttr('aria-label');
         if (maxParticipant) {
             var slotId = maxParticipant === 'host' ? 'slot-main' : 'slot-' + maxParticipant;
-            $('#' + slotId).addClass('speaking');
+            $('#' + slotId).addClass('speaking').attr('aria-label', 'Currently speaking');
         }
     }
     
@@ -697,6 +711,12 @@
         
         console.log('Removing guest ' + guestNum);
         
+        // Stop oscillator if exists
+        if (state.guests[guestNum].oscillator) {
+            state.guests[guestNum].oscillator.stop();
+            state.guests[guestNum].oscillator = null;
+        }
+        
         // Close peer connection
         if (state.guests[guestNum].peerConnection) {
             state.guests[guestNum].peerConnection.close();
@@ -754,8 +774,9 @@
         var stream = canvas.captureStream(30);
         
         // Create audio context and oscillator for mock audio
+        var oscillator = null;
         if (state.audioContext) {
-            var oscillator = state.audioContext.createOscillator();
+            oscillator = state.audioContext.createOscillator();
             var gain = state.audioContext.createGain();
             gain.gain.value = 0.1;
             oscillator.connect(gain);
@@ -771,6 +792,11 @@
             
             // Setup analyser for mock audio
             setupAudioAnalyser('guest-' + guestNum, stream);
+            
+            // Store oscillator reference for cleanup
+            if (state.guests[guestNum]) {
+                state.guests[guestNum].oscillator = oscillator;
+            }
         }
         
         var videoElement = document.getElementById('guest-video-' + guestNum);
