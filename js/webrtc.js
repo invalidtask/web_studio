@@ -217,7 +217,6 @@ var WebRTCStreaming = (function() {
         // This is a simplified mock answer for demo purposes
         // In production, this would come from the actual OSSRS server
         var answerSdp = offerSdp.replace(/a=sendrecv/g, 'a=recvonly');
-        answerSdp = answerSdp.replace(/t=0 0/g, 't=0 0');
         return answerSdp;
     }
     

@@ -15,7 +15,8 @@
         isStreaming: false,
         selectedDeviceId: null,
         compositeCanvas: null,
-        compositeContext: null
+        compositeContext: null,
+        guestIntervals: {}
     };
     
     /**
@@ -65,11 +66,10 @@
                 
                 videoDevices.forEach(function(device, index) {
                     var label = device.label || 'Camera ' + (index + 1);
-                    $select.append(
-                        $('<option></option>')
-                            .val(device.deviceId)
-                            .text(label)
-                    );
+                    var option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = label;
+                    $select[0].appendChild(option);
                 });
                 
                 if (videoDevices.length === 0) {
@@ -297,6 +297,12 @@
         var videoElement = document.getElementById('guest-video-' + guestNum);
         videoElement.srcObject = null;
         
+        // Clear animation interval
+        if (state.guestIntervals[guestNum]) {
+            clearInterval(state.guestIntervals[guestNum]);
+            delete state.guestIntervals[guestNum];
+        }
+        
         // Update UI
         $('.guest-id[data-guest="' + guestNum + '"]').val('').prop('disabled', false);
         $('.btn-add-guest[data-guest="' + guestNum + '"]').prop('disabled', false);
@@ -336,7 +342,8 @@
         }
         
         // Animate
-        setInterval(drawFrame, 1000);
+        var interval = setInterval(drawFrame, 1000);
+        state.guestIntervals[guestNum] = interval;
         drawFrame();
         
         // Create stream from canvas
